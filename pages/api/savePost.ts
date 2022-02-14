@@ -1,8 +1,48 @@
-// Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 import type { NextApiRequest, NextApiResponse } from "next";
+import webPush, { PushSubscription } from "web-push";
 import cors from "cors";
 
 import middleware from "../../lib/middleware";
+
+type SubscriptionType = {
+  [key in string]: {
+    endpoint: string;
+    keys: {
+      auth: string;
+      p256dh: string;
+    };
+  };
+};
+async function getSubscription(): Promise<SubscriptionType> {
+  const url =
+    "https://pwgram-30323-default-rtdb.asia-southeast1.firebasedatabase.app/subscriptions.json";
+  return await fetch(url)
+    .then((rsp) => rsp.json())
+    .then((payload) => payload);
+}
+async function sendNotification(
+  pushConfig: PushSubscription,
+  body: { title: string; content: string }
+) {
+  try {
+    return await webPush
+      .sendNotification(
+        pushConfig,
+        JSON.stringify({
+          title: body.title ?? "New Post",
+          content: body.content ?? "New Post Added !",
+        })
+      )
+      .then((rsp) => {
+        console.log("sendNotification response :", rsp);
+      })
+      .catch((err) => {
+        console.log("sendNotification error :", err);
+      });
+  } catch (error) {
+    console.log("sendNotification catch : ", error);
+  }
+}
 
 export default async function handler(
   req: NextApiRequest,
@@ -34,14 +74,45 @@ export default async function handler(
         }),
       }
     );
-    const rsp = await payload.json();
 
+    // setup web push
+    try {
+      webPush.setVapidDetails(
+        "mailto:test@test.org",
+        process.env.PUSH_PUBLIC as string,
+        process.env.PUSH_PRIVATE as string
+      );
+    } catch (error) {
+      console.log("setVapidDetails : ", error);
+    }
+
+    // get all subscription
+    const subs = await getSubscription();
+
+    // send notif to all subscription
+    for (const key in subs) {
+      if (Object.prototype.hasOwnProperty.call(subs, key)) {
+        sendNotification(
+          {
+            endpoint: subs[key].endpoint,
+            keys: {
+              auth: subs[key].keys.auth,
+              p256dh: subs[key].keys.p256dh,
+            },
+          },
+          { title: body.title, content: body.location }
+        );
+      }
+    }
+
+    // send response endpoint
+    const rsp = await payload.json();
     if (rsp.ok) {
       console.info("save successfully ");
     }
     return res.status(201).json(rsp);
   } catch (error) {
-    console.log(error);
+    console.log("handler : ", error);
     res.status(500).json({ error });
   }
 }
