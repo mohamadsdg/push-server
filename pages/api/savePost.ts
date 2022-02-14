@@ -22,7 +22,7 @@ async function getSubscription(): Promise<SubscriptionType> {
 }
 async function sendNotification(
   pushConfig: PushSubscription,
-  body: { title: string; content: string }
+  body: { title: string; content: string; openUrl?: string }
 ) {
   try {
     return await webPush
@@ -31,6 +31,7 @@ async function sendNotification(
         JSON.stringify({
           title: body.title ?? "New Post",
           content: body.content ?? "New Post Added !",
+          url: "/",
         })
       )
       .then((rsp) => {
