@@ -9,8 +9,10 @@
   },
   "dependencies": {
     "@types/cors": "^2.8.12",
+    "@types/formidable": "^2.0.4",
     "@types/web-push": "^3.3.2",
     "cors": "^2.8.5",
+    "formidable": "^2.0.1",
     "next": "12.0.10",
     "react": "17.0.2",
     "react-dom": "17.0.2"

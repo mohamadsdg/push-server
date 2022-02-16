@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import webPush, { PushSubscription } from "web-push";
 import cors from "cors";
+import formidable, { File } from "formidable";
+import fs from "fs";
 
 import middleware from "../../lib/middleware";
 
@@ -44,6 +46,24 @@ async function sendNotification(
     console.log("sendNotification catch : ", error);
   }
 }
+async function saveFile(file: File) {
+  // console.log("file", file);
+  try {
+    const data = fs.readFileSync(file.filepath);
+    fs.writeFileSync(`./public/upload/${file.newFilename}.jpeg`, data);
+    await fs.unlinkSync(file.filepath);
+    return `${process.env.APP}/upload/${file.newFilename}.jpeg`;
+  } catch (error) {
+    console.log("saveFile->error", error);
+    // throw new Error("failed save file ");
+  }
+}
+//
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 export default async function handler(
   req: NextApiRequest,
@@ -55,63 +75,84 @@ export default async function handler(
     res.setHeader("Allow", ["POST"]);
     res.status(405).end(`Method ${req.method} Not Allowed`);
   }
-  const { body } = req;
+  let body: {
+    filePath: string;
+    id: undefined | string | string[];
+    title: undefined | string | string[];
+    location: undefined | string | string[];
+  } = {
+    filePath: "",
+    id: undefined,
+    title: undefined,
+    location: undefined,
+  };
 
   try {
-    const payload = await fetch(
-      "https://pwgram-30323-default-rtdb.asia-southeast1.firebasedatabase.app/posts.json",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          id: body.id,
-          title: body.title,
-          location: body.location,
-          image:
-            "https://firebasestorage.googleapis.com/v0/b/pwgram-30323.appspot.com/o/sf-boat.jpg?alt=media&token=c2fa4ba0-bfca-419b-acc9-b016e78d956c",
-        }),
-      }
-    );
+    const form = new formidable.IncomingForm();
+    form.parse(req, async function (err, fields, files) {
+      const filePath = (await saveFile(files.file as File)) as string;
+      // console.log("formidable->fields", filePath);
+      body = {
+        filePath,
+        id: fields.id,
+        location: fields.location,
+        title: fields.title,
+      };
 
-    // setup web push
-    try {
-      webPush.setVapidDetails(
-        "mailto:test@test.org",
-        process.env.PUSH_PUBLIC as string,
-        process.env.PUSH_PRIVATE as string
-      );
-    } catch (error) {
-      console.log("setVapidDetails : ", error);
-    }
-
-    // get all subscription
-    const subs = await getSubscription();
-
-    // send notif to all subscription
-    for (const key in subs) {
-      if (Object.prototype.hasOwnProperty.call(subs, key)) {
-        sendNotification(
-          {
-            endpoint: subs[key].endpoint,
-            keys: {
-              auth: subs[key].keys.auth,
-              p256dh: subs[key].keys.p256dh,
-            },
+      const payload = await fetch(
+        "https://pwgram-30323-default-rtdb.asia-southeast1.firebasedatabase.app/posts.json",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
           },
-          { title: body.title, content: body.location }
-        );
-      }
-    }
+          body: JSON.stringify({
+            id: body.id,
+            title: body.title,
+            location: body.location,
+            image: body.filePath,
+          }),
+        }
+      );
 
-    // send response endpoint
-    const rsp = await payload.json();
-    if (rsp.ok) {
-      console.info("save successfully ");
-    }
-    return res.status(201).json(rsp);
+      // setup web push
+      try {
+        webPush.setVapidDetails(
+          "mailto:test@test.org",
+          process.env.PUSH_PUBLIC as string,
+          process.env.PUSH_PRIVATE as string
+        );
+      } catch (error) {
+        console.log("setVapidDetails : ", error);
+      }
+
+      // get all subscription
+      const subs = await getSubscription();
+
+      // send notif to all subscription
+      for (const key in subs) {
+        if (Object.prototype.hasOwnProperty.call(subs, key)) {
+          sendNotification(
+            {
+              endpoint: subs[key].endpoint,
+              keys: {
+                auth: subs[key].keys.auth,
+                p256dh: subs[key].keys.p256dh,
+              },
+            },
+            { title: body.title as string, content: body.location as string }
+          );
+        }
+      }
+
+      // send response endpoint
+      const rsp = await payload.json();
+      if (rsp.ok) {
+        console.info("save successfully ");
+      }
+      return res.status(201).json(rsp);
+    });
   } catch (error) {
     console.log("handler : ", error);
     res.status(500).json({ error });
