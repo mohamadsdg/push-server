@@ -24,7 +24,7 @@ async function getSubscription(): Promise<SubscriptionType> {
 }
 async function sendNotification(
   pushConfig: PushSubscription,
-  body: { title: string; content: string; openUrl?: string }
+  body: { title: string; content: string; openUrl?: string; img?: string }
 ) {
   try {
     return await webPush
@@ -34,6 +34,7 @@ async function sendNotification(
           title: body.title ?? "New Post",
           content: body.content ?? "New Post Added !",
           url: "/",
+          img: body.img,
         })
       )
       .then((rsp) => {
@@ -80,23 +81,36 @@ export default async function handler(
     id: undefined | string | string[];
     title: undefined | string | string[];
     location: undefined | string | string[];
+    rawLocation: {
+      lat: undefined | number | string;
+      lng: undefined | number | string;
+    };
   } = {
     filePath: "",
     id: undefined,
     title: undefined,
     location: undefined,
+    rawLocation: {
+      lat: undefined,
+      lng: undefined,
+    },
   };
 
   try {
     const form = new formidable.IncomingForm();
     form.parse(req, async function (err, fields, files) {
+      if (err) res.status(500).json({ error: err });
+      console.log("formidable", fields, files);
       const filePath = (await saveFile(files.file as File)) as string;
-      // console.log("formidable->fields", filePath);
       body = {
         filePath,
         id: fields.id,
         location: fields.location,
         title: fields.title,
+        rawLocation: {
+          lat: fields.rawLocationLat as string,
+          lng: fields.rawLocationLng as string,
+        },
       };
 
       const payload = await fetch(
@@ -112,6 +126,10 @@ export default async function handler(
             title: body.title,
             location: body.location,
             image: body.filePath,
+            rawLocation: {
+              lat: body.rawLocation.lat as string,
+              lng: body.rawLocation.lng as string,
+            },
           }),
         }
       );
@@ -141,7 +159,11 @@ export default async function handler(
                 p256dh: subs[key].keys.p256dh,
               },
             },
-            { title: body.title as string, content: body.location as string }
+            {
+              title: body.title as string,
+              content: body.location as string,
+              img: body.filePath,
+            }
           );
         }
       }
